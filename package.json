@@ -31,8 +31,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ithdev/sifende.git",
-    "directory": "sifende-sdk-ts"
+    "url": "git+https://github.com/ithdev/sifende-node.git"
   },
   "homepage": "https://sifende.com.py/docs",
   "scripts": {
@@ -52,5 +51,8 @@
     "tsdown": "^0.23.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.4"
+  },
+  "bugs": {
+    "url": "https://github.com/ithdev/sifende-node/issues"
   }
 }
