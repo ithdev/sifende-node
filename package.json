@@ -1,0 +1,56 @@
+{
+  "name": "@sifende/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SDK oficial de Sifende para emitir documentos electrónicos de SIFEN desde TypeScript y JavaScript.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.cts",
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "sifen",
+    "sifende",
+    "factura electrónica",
+    "paraguay",
+    "set"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ithdev/sifende.git",
+    "directory": "sifende-sdk-ts"
+  },
+  "homepage": "https://sifende.com.py/docs",
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check",
+    "format": "biome check --write",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generar:tipos": "node scripts/generar-tipos.mjs",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^26.6.5",
+    "publint": "^0.3.25",
+    "tsdown": "^0.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  }
+}
