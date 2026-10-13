@@ -87,8 +87,9 @@ try {
 ```
 
 El SDK reintenta solo los casos que la API marca como seguros: cortes de conexión con clave de idempotencia,
-`409 idempotency-in-progress`, `503 idempotency-upstream-unknown`, `503 evento-nominacion-error`, `429`, y 5xx en
-consultas. Respeta `Retry-After`.
+`409 idempotency-in-progress`, `503 idempotency-upstream-unknown`, `503 evento-nominacion-error`, `429`, y 500, 502,
+503 o 504 en consultas. Respeta `Retry-After`. Un corte o un timeout mientras llega la respuesta cuenta como corte de
+conexión.
 
 ## Webhooks
 

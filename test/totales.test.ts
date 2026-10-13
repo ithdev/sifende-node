@@ -88,6 +88,19 @@ describe('calcularTotales', () => {
     expect(totales.totalGuaranies).toBe(70000 + 71000);
   });
 
+  it('tampoco suma en guaraníes por ítem un ítem gravado sin tasa válida', () => {
+    const totales = calcularTotales({
+      monedaOperacion: 'USD',
+      items: [
+        { precioUnitario: 100, cantidad: 1, afectacionTributaria: 'GRAVADO', tipoCambio: 7000 },
+        { precioUnitario: 10, cantidad: 1, afectacionTributaria: 'EXENTO', tipoCambio: 7000 },
+      ],
+    });
+
+    expect(totales.totalOperacion).toBe(10);
+    expect(totales.totalGuaranies).toBe(70000);
+  });
+
   it('exige tipoCambio por ítem si la operación extranjera no tiene uno global', () => {
     expect(() =>
       calcularTotales({

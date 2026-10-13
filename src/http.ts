@@ -64,9 +64,16 @@ export class ClienteHttp {
     this.apiKey = opciones.apiKey.trim();
     this.ambiente = Object.entries(PREFIJOS).find(([prefijo]) => this.apiKey.startsWith(prefijo))?.[1];
     this.baseUrl = (opciones.baseUrl ?? URL_BASE).replace(/\/+$/, '');
+    if (!URL.canParse(this.baseUrl)) throw new TypeError(`baseUrl no es una URL válida: ${this.baseUrl}`);
     this.fetch = opciones.fetch ?? globalThis.fetch.bind(globalThis);
     this.timeoutMs = opciones.timeoutMs ?? 30_000;
+    if (!(Number.isFinite(this.timeoutMs) && this.timeoutMs > 0)) {
+      throw new RangeError(`timeoutMs debe ser un número positivo: ${this.timeoutMs}`);
+    }
     this.maxReintentos = opciones.maxReintentos ?? 2;
+    if (!(Number.isInteger(this.maxReintentos) && this.maxReintentos >= 0)) {
+      throw new RangeError(`maxReintentos debe ser un entero mayor o igual a 0: ${this.maxReintentos}`);
+    }
   }
 
   url(ruta: string, query?: Solicitud['query']): string {
@@ -78,10 +85,22 @@ export class ClienteHttp {
   }
 
   async solicitar<T>(solicitud: Solicitud): Promise<Respuesta<T>> {
+    // Se arma una sola vez: todos los intentos envían los mismos bytes bajo la misma Idempotency-Key.
+    const url = this.url(solicitud.ruta, solicitud.query);
+    const init = this.preparar(solicitud);
+
     for (let intento = 0; ; intento++) {
       let respuesta: Response;
+      let datos: unknown;
       try {
-        respuesta = await this.enviar(solicitud);
+        // El intento abarca la lectura del cuerpo: un corte o un timeout a mitad de la respuesta es una falla de
+        // conexión como cualquier otra.
+        const limite = AbortSignal.timeout(this.timeoutMs);
+        respuesta = await this.fetch(url, {
+          ...init,
+          signal: solicitud.signal ? AbortSignal.any([solicitud.signal, limite]) : limite,
+        });
+        datos = await leerCuerpo(respuesta, solicitud.binario === true && respuesta.ok && respuesta.status !== 202);
       } catch (error) {
         if (solicitud.signal?.aborted) throw error;
         const reintentable = solicitud.metodo === 'GET' || solicitud.idempotencyKey !== undefined;
@@ -92,7 +111,6 @@ export class ClienteHttp {
         throw errorDeConexion(error, solicitud.idempotencyKey);
       }
 
-      const datos = await leerCuerpo(respuesta, solicitud.binario === true && respuesta.ok && respuesta.status !== 202);
       if (respuesta.ok) return { status: respuesta.status, headers: respuesta.headers, datos: datos as T };
 
       const error = new SifendeApiError({
@@ -109,7 +127,7 @@ export class ClienteHttp {
     }
   }
 
-  private enviar(solicitud: Solicitud): Promise<Response> {
+  private preparar(solicitud: Solicitud): RequestInit {
     const headers = new Headers({
       Accept: solicitud.binario ? 'application/pdf, application/json, application/problem+json' : 'application/json',
       'User-Agent': `sifende-sdk-ts/${VERSION}`,
@@ -118,13 +136,11 @@ export class ClienteHttp {
     if (solicitud.idempotencyKey !== undefined) headers.set('Idempotency-Key', solicitud.idempotencyKey);
     if (solicitud.cuerpo !== undefined) headers.set('Content-Type', 'application/json');
 
-    const limite = AbortSignal.timeout(this.timeoutMs);
-    return this.fetch(this.url(solicitud.ruta, solicitud.query), {
+    return {
       method: solicitud.metodo,
       headers,
       body: solicitud.cuerpo === undefined ? null : JSON.stringify(solicitud.cuerpo),
-      signal: solicitud.signal ? AbortSignal.any([solicitud.signal, limite]) : limite,
-    });
+    };
   }
 }
 
@@ -132,7 +148,7 @@ function esReintentable(error: SifendeApiError, solicitud: Solicitud): boolean {
   if (error.status === 429) return true;
   if (error.codigo !== undefined && CODIGOS_REINTENTABLES.has(error.codigo)) return true;
   if (error.status === 503 && error.codigo === 'evento-nominacion-error') return true;
-  return solicitud.metodo === 'GET' && [502, 503, 504].includes(error.status);
+  return solicitud.metodo === 'GET' && [500, 502, 503, 504].includes(error.status);
 }
 
 async function leerCuerpo(respuesta: Response, binario: boolean): Promise<unknown> {
@@ -142,16 +158,26 @@ async function leerCuerpo(respuesta: Response, binario: boolean): Promise<unknow
   if (/json/i.test(respuesta.headers.get('content-type') ?? '')) {
     try {
       return JSON.parse(texto);
-    } catch {
+    } catch (error) {
+      // Un error HTTP conserva el texto para diagnosticarlo; un éxito ilegible no puede pasar por el DTO esperado.
+      if (respuesta.ok) throw new RespuestaIlegible(texto.slice(0, 200), { cause: error });
       return texto;
     }
   }
   return texto;
 }
 
+class RespuestaIlegible extends Error {}
+
 function errorDeConexion(error: unknown, idempotencyKey: string | undefined): SifendeConexionError {
   if (error instanceof DOMException && error.name === 'TimeoutError') {
     return new SifendeTimeoutError('La API de Sifende no respondió a tiempo', { cause: error, idempotencyKey });
+  }
+  if (error instanceof RespuestaIlegible) {
+    return new SifendeConexionError('La API de Sifende respondió un JSON que no se pudo leer', {
+      cause: error,
+      idempotencyKey,
+    });
   }
   return new SifendeConexionError('No se pudo conectar con la API de Sifende', { cause: error, idempotencyKey });
 }
