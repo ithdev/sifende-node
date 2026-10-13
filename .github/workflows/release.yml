@@ -1,0 +1,43 @@
+name: Release
+
+# Publica en npm al publicar un GitHub Release con tag vX.Y.Z igual a la versión de package.json.
+# Usa trusted publishing (OIDC): sin NPM_TOKEN, con provenance firmada.
+# Mientras package.json tenga "private": true, npm publish falla y no se publica nada.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    name: Publicar en npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          # Sin caché al publicar: una caché envenenada podría leer el token OIDC.
+          package-manager-cache: false
+      - name: El tag coincide con la versión
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::El tag $GITHUB_REF_NAME no coincide con package.json (v$version)"
+            exit 1
+          fi
+      - run: npm ci
+      # prepublishOnly corre lint, typecheck, tests y build antes de publicar.
+      - run: npm publish --provenance --access public
