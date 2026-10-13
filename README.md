@@ -133,3 +133,7 @@ copia local del spec:
 npm run generar:tipos
 SIFENDE_OPENAPI=./openapi.json npm run generar:tipos
 ```
+
+## Licencia
+
+[Apache 2.0](LICENSE). Copyright 2026 ITH E.A.S.; ver [NOTICE](NOTICE).
