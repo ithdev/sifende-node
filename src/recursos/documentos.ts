@@ -48,11 +48,23 @@ export class Documentos {
     return respuesta.datos;
   }
 
-  /** Descarga el PDF del KuDE y espera mientras Sifende lo prepara. */
+  /** Descarga el PDF del KuDE y espera mientras Sifende lo prepara, como mucho `esperarMs` en total. */
   async descargarKude(cdc: string, opciones: OpcionesKude = {}): Promise<Uint8Array> {
+    const esperarMs = opciones.esperarMs ?? 180_000;
+    // El plazo cubre todo: cada GET, sus reintentos y las esperas entre consultas.
+    const plazo = AbortSignal.timeout(esperarMs);
+    const signal = opciones.signal ? AbortSignal.any([opciones.signal, plazo]) : plazo;
+    try {
+      return await this.esperarKude(cdc, Date.now() + esperarMs, signal);
+    } catch (error) {
+      if (plazo.aborted && !opciones.signal?.aborted) throw new KudePendienteError(cdc);
+      throw error;
+    }
+  }
+
+  private async esperarKude(cdc: string, limite: number, signal: AbortSignal): Promise<Uint8Array> {
     const ruta = `${RUTA}/${encodeURIComponent(cdc)}/kude`;
     const inicio = Date.now();
-    const limite = inicio + (opciones.esperarMs ?? 180_000);
     let reintentoSinConsultaHecho = false;
     let soloConsulta = false;
 
@@ -62,13 +74,13 @@ export class Documentos {
         ruta,
         query: soloConsulta ? { soloConsulta: true } : undefined,
         binario: true,
-        signal: opciones.signal,
+        signal,
       });
       if (respuesta.status !== 202) return respuesta.datos;
 
       const espera = (segundosRetryAfter(respuesta.headers.get('retry-after')) ?? 5) * 1000;
       if (Date.now() + espera > limite) throw new KudePendienteError(cdc);
-      await esperar(espera, opciones.signal);
+      await esperar(espera, signal);
 
       // Con soloConsulta no se vuelve a pedir la preparación: a los 2 minutos se repite una vez sin él.
       soloConsulta = reintentoSinConsultaHecho || Date.now() - inicio < 120_000;

@@ -78,8 +78,16 @@ export function segundosRetryAfter(valor: string | null): number | undefined {
   return Number.isNaN(fecha) ? undefined : Math.max(0, (fecha - Date.now()) / 1000);
 }
 
+const CAMPOS_TEXTO = ['type', 'title', 'detail', 'traceId'] as const;
+
+/** Sólo es un Problem Details si los campos que el SDK lee tienen el tipo que espera. */
 function esProblema(cuerpo: unknown): cuerpo is ProblemDetail {
-  return typeof cuerpo === 'object' && cuerpo !== null && ('type' in cuerpo || 'title' in cuerpo || 'detail' in cuerpo);
+  if (typeof cuerpo !== 'object' || cuerpo === null) return false;
+  const campos = cuerpo as Record<string, unknown>;
+  if (!('type' in campos || 'title' in campos || 'detail' in campos)) return false;
+  const textosValidos = CAMPOS_TEXTO.every((campo) => campos[campo] === undefined || typeof campos[campo] === 'string');
+  const errores = campos.errores;
+  return textosValidos && (errores === undefined || (typeof errores === 'object' && errores !== null));
 }
 
 function mensaje(status: number, cuerpo: unknown, problema: ProblemDetail | undefined): string {

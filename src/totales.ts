@@ -76,14 +76,16 @@ export function calcularTotales(documento: DocumentoParaTotales): Totales {
     ].reduce<Decimal>((acumulado, deduccion) => (deduccion ? acumulado.restar(deduccion) : acumulado), precio);
     const totalItem = precioNeto.multiplicar(Decimal.de(item.cantidad)).conEscala(escala);
 
-    if (!esGuarani && cambioGlobal === undefined) {
-      if (item.tipoCambio == null) {
-        throw new TypeError(`El ítem necesita tipoCambio cuando la operación en ${moneda} no tiene tipoCambio global`);
-      }
-      totalGuaraniesItems = totalGuaraniesItems.sumar(totalItem.multiplicar(Decimal.de(item.tipoCambio)));
+    if (!esGuarani && cambioGlobal === undefined && item.tipoCambio == null) {
+      throw new TypeError(`El ítem necesita tipoCambio cuando la operación en ${moneda} no tiene tipoCambio global`);
     }
+    // Como FiscalTotalCalculator.aggregateItems: un ítem que no aporta queda fuera de ambos totales.
+    if (!aportaAlTotal(item)) continue;
 
     totalOperacion = totalOperacion.sumar(aporteAlTotal(item, totalItem, escala));
+    if (!esGuarani && cambioGlobal === undefined && item.tipoCambio != null) {
+      totalGuaraniesItems = totalGuaraniesItems.sumar(totalItem.multiplicar(Decimal.de(item.tipoCambio)));
+    }
   }
 
   const redondeo = esGuarani ? totalOperacion.resto(CINCUENTA) : Decimal.CERO;
@@ -103,16 +105,24 @@ export function calcularTotales(documento: DocumentoParaTotales): Totales {
   };
 }
 
-function aporteAlTotal(item: ItemParaTotales, totalItem: Decimal, escala: number): Decimal {
+function aportaAlTotal(item: ItemParaTotales): boolean {
   switch (item.afectacionTributaria) {
     case 'EXENTO':
     case 'EXONERADO':
-      return totalItem;
+      return true;
     case 'GRAVADO':
-      return tasaValida(item.tasaIVA) ? totalItem : Decimal.CERO;
+    case 'GRAVADO_PARCIAL':
+      return tasaValida(item.tasaIVA);
+    default:
+      return false;
+  }
+}
+
+/** Lo que suma un ítem que aporta al total. */
+function aporteAlTotal(item: ItemParaTotales, totalItem: Decimal, escala: number): Decimal {
+  switch (item.afectacionTributaria) {
     case 'GRAVADO_PARCIAL': {
-      if (!tasaValida(item.tasaIVA)) return Decimal.CERO;
-      if (item.propIVA == null) return totalItem;
+      if (item.propIVA == null || !tasaValida(item.tasaIVA)) return totalItem;
       // NT013: el gravado parcial aporta base gravada + liquidación + base exenta, cada una redondeada.
       const tasa = Decimal.de(item.tasaIVA);
       const proporcion = Decimal.de(item.propIVA);
@@ -123,7 +133,7 @@ function aporteAlTotal(item: ItemParaTotales, totalItem: Decimal, escala: number
       return base.sumar(liquidacion).sumar(exenta);
     }
     default:
-      return Decimal.CERO;
+      return totalItem;
   }
 }
 
