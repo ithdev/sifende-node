@@ -2,7 +2,6 @@ name: Release
 
 # Publica en npm al publicar un GitHub Release con tag vX.Y.Z igual a la versión de package.json.
 # Usa trusted publishing (OIDC): sin NPM_TOKEN, con provenance firmada.
-# Mientras package.json tenga "private": true, npm publish falla y no se publica nada.
 on:
   release:
     types: [published]

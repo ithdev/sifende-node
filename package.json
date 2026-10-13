@@ -1,7 +1,6 @@
 {
   "name": "@sifende/sdk",
   "version": "0.1.0",
-  "private": true,
   "description": "SDK oficial de Sifende para emitir documentos electrónicos de SIFEN desde TypeScript y JavaScript.",
   "license": "Apache-2.0",
   "type": "module",
