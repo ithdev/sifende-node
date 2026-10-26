@@ -38,6 +38,15 @@ export class Catalogos {
     return datos.data ?? [];
   }
 
+  /** Todas las ciudades de un departamento, sin pasar por sus distritos, con el código que SIFEN espera. */
+  async ciudadesDeDepartamento(departamentoId: number, opciones: OpcionesSolicitud = {}): Promise<CiudadDto[]> {
+    const datos = await this.obtener<ApiResponseListCiudadDto>(
+      `/api/v1/geografia/departamentos/${encodeURIComponent(departamentoId)}/ciudades`,
+      opciones,
+    );
+    return datos.data ?? [];
+  }
+
   private async obtener<T>(ruta: string, opciones: OpcionesSolicitud): Promise<T> {
     const respuesta = await this.http.solicitar<T>({ metodo: 'GET', ruta, autenticar: false, signal: opciones.signal });
     return respuesta.datos;

@@ -10,7 +10,15 @@ import type {
   ListarEventosData,
   PageDtoEventoSifenDto,
 } from '../generado/types.gen.js';
-import { type ClienteHttp, esperar, type OpcionesIdempotentes, type OpcionesSolicitud } from '../http.js';
+import {
+  ACEPTA_PDF,
+  ACEPTA_PNG,
+  ACEPTA_XML,
+  type ClienteHttp,
+  esperar,
+  type OpcionesIdempotentes,
+  type OpcionesSolicitud,
+} from '../http.js';
 
 const RUTA = '/api/v1/documento-electronico';
 
@@ -19,6 +27,20 @@ export type SolicitudEmision = EmitirDocumentoData['body'];
 export interface OpcionesKude extends OpcionesSolicitud {
   /** Cuánto esperar a que el PDF esté listo. Por defecto 3 minutos. */
   esperarMs?: number;
+}
+
+export interface OpcionesTicket extends OpcionesSolicitud {
+  /** Ancho del papel en mm: 80 o 58. Por defecto 80. */
+  ancho?: 80 | 58;
+  /** Omite el detalle de ítems y de impuestos (Manual Técnico V150, cap. 13.7). */
+  resumen?: boolean;
+}
+
+export interface OpcionesTicketImagen extends OpcionesSolicitud {
+  /** Puntos por línea de la impresora a 203 dpi: 576 o 512 para papel de 80 mm, 384 para 58 mm. Por defecto 576. */
+  puntos?: 576 | 512 | 384;
+  /** Omite el detalle de ítems y de impuestos (Manual Técnico V150, cap. 13.7). */
+  resumen?: boolean;
 }
 
 export class Documentos {
@@ -73,6 +95,7 @@ export class Documentos {
         metodo: 'GET',
         ruta,
         query: soloConsulta ? { soloConsulta: true } : undefined,
+        acepta: ACEPTA_PDF,
         binario: true,
         signal,
       });
@@ -86,6 +109,57 @@ export class Documentos {
       soloConsulta = reintentoSinConsultaHecho || Date.now() - inicio < 120_000;
       if (!soloConsulta) reintentoSinConsultaHecho = true;
     }
+  }
+
+  /**
+   * Descarga el XML firmado tal como se envió a SIFEN, con el código QR incluido. Está disponible desde que el
+   * documento se registra; si todavía no tiene XML, la API responde 409 `documento-xml-not-available`.
+   */
+  async descargarXml(cdc: string, opciones: OpcionesSolicitud = {}): Promise<string> {
+    const respuesta = await this.http.solicitar<string | undefined>({
+      metodo: 'GET',
+      ruta: `${RUTA}/${encodeURIComponent(cdc)}/xml`,
+      acepta: ACEPTA_XML,
+      signal: opciones.signal,
+    });
+    return respuesta.datos ?? '';
+  }
+
+  /**
+   * Descarga el KuDE en cinta de papel (PDF) para impresoras térmicas de 80 o 58 mm. Sólo existe para facturas y
+   * notas de crédito o débito: otros tipos responden 501 `kude-not-supported`.
+   */
+  async descargarKudeTicket(cdc: string, opciones: OpcionesTicket = {}): Promise<Uint8Array> {
+    return this.descargarTicket(`${RUTA}/${encodeURIComponent(cdc)}/kude/ticket`, ACEPTA_PDF, opciones, {
+      ancho: opciones.ancho,
+    });
+  }
+
+  /**
+   * Descarga el ticket como PNG de 1 bit con el ancho exacto de una línea de la impresora, para imprimirlo con el
+   * comando de imagen ráster de ESC/POS (GS v 0).
+   */
+  async descargarKudeTicketImagen(cdc: string, opciones: OpcionesTicketImagen = {}): Promise<Uint8Array> {
+    return this.descargarTicket(`${RUTA}/${encodeURIComponent(cdc)}/kude/ticket/imagen`, ACEPTA_PNG, opciones, {
+      puntos: opciones.puntos,
+    });
+  }
+
+  private async descargarTicket(
+    ruta: string,
+    acepta: string,
+    opciones: OpcionesSolicitud & { resumen?: boolean },
+    medida: Record<string, number | undefined>,
+  ): Promise<Uint8Array> {
+    const respuesta = await this.http.solicitar<Uint8Array>({
+      metodo: 'GET',
+      ruta,
+      query: { ...medida, resumen: opciones.resumen || undefined },
+      acepta,
+      binario: true,
+      signal: opciones.signal,
+    });
+    return respuesta.datos;
   }
 
   async cancelar(

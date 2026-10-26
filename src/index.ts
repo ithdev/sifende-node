@@ -10,7 +10,8 @@ export {
 } from './errores.js';
 export type * from './generado/types.gen.js';
 export type { Ambiente, OpcionesCliente, OpcionesIdempotentes, OpcionesSolicitud } from './http.js';
-export type { OpcionesKude, SolicitudEmision } from './recursos/documentos.js';
+export type { OpcionesKude, OpcionesTicket, OpcionesTicketImagen, SolicitudEmision } from './recursos/documentos.js';
+export type { FiltroEntregas } from './recursos/webhooks.js';
 export {
   calcularTotales,
   type DocumentoParaTotales,

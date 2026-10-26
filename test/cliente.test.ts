@@ -272,3 +272,162 @@ describe('eventos', () => {
     expect(llamadas[0]?.headers.get('idempotency-key')).toBe(llamadas[1]?.headers.get('idempotency-key'));
   });
 });
+
+describe('descargas', () => {
+  const bytes = (tipo: string, contenido: Uint8Array<ArrayBuffer> | string) => () =>
+    new Response(contenido, { headers: { 'Content-Type': tipo } });
+
+  it('devuelve el XML firmado como texto y lo pide como XML', async () => {
+    const xml = '<?xml version="1.0" encoding="UTF-8"?><rDE><DE Id="0180"/></rDE>';
+    const { fetch, llamadas } = falsoFetch(bytes('application/xml', xml));
+    const sifende = new Sifende({ apiKey: 'sk_test_abc', fetch });
+
+    await expect(sifende.documentos.descargarXml('0180')).resolves.toBe(xml);
+    expect(llamadas[0]?.url.pathname).toBe('/api/v1/documento-electronico/0180/xml');
+    expect(llamadas[0]?.headers.get('accept')).toMatch(/^application\/xml/);
+  });
+
+  it('informa el 409 de un documento que todavía no tiene XML', async () => {
+    const { fetch } = falsoFetch(problema(409, 'documento-xml-not-available'));
+    const sifende = new Sifende({ apiKey: 'sk_test_abc', fetch });
+
+    const error = await sifende.documentos.descargarXml('0180').catch((e: unknown) => e);
+
+    expect((error as SifendeApiError).codigo).toBe('documento-xml-not-available');
+  });
+
+  it('descarga el ticket con ancho y resumen sólo si se indican', async () => {
+    const { fetch, llamadas } = falsoFetch(bytes('application/pdf', '%PDF'));
+    const sifende = new Sifende({ apiKey: 'sk_test_abc', fetch });
+
+    await sifende.documentos.descargarKudeTicket('0180');
+    const contenido = await sifende.documentos.descargarKudeTicket('0180', { ancho: 58, resumen: true });
+
+    expect(new TextDecoder().decode(contenido)).toBe('%PDF');
+    expect(llamadas[0]?.url.pathname).toBe('/api/v1/documento-electronico/0180/kude/ticket');
+    expect(llamadas[0]?.url.search).toBe('');
+    expect(llamadas[1]?.url.search).toBe('?ancho=58&resumen=true');
+  });
+
+  it('no reintenta el 501 de un tipo de documento sin ticket', async () => {
+    const { fetch, llamadas } = falsoFetch(problema(501, 'kude-not-supported'));
+    const sifende = new Sifende({ apiKey: 'sk_test_abc', fetch });
+
+    await expect(sifende.documentos.descargarKudeTicket('0180')).rejects.toBeInstanceOf(SifendeApiError);
+    expect(llamadas).toHaveLength(1);
+  });
+
+  it('descarga el ticket como PNG para ESC/POS', async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const { fetch, llamadas } = falsoFetch(bytes('image/png', png));
+    const sifende = new Sifende({ apiKey: 'sk_test_abc', fetch });
+
+    const contenido = await sifende.documentos.descargarKudeTicketImagen('0180', { puntos: 384 });
+
+    expect(Array.from(contenido)).toEqual(Array.from(png));
+    expect(llamadas[0]?.url.pathname).toBe('/api/v1/documento-electronico/0180/kude/ticket/imagen');
+    expect(llamadas[0]?.url.search).toBe('?puntos=384');
+    expect(llamadas[0]?.headers.get('accept')).toMatch(/^image\/png/);
+  });
+
+  it('lista las ciudades de un departamento sin API key', async () => {
+    const { fetch, llamadas } = falsoFetch(json({ data: [{ ciudadId: 1, nombre: 'ASUNCION (DISTRITO)' }] }));
+    const sifende = new Sifende({ apiKey: 'sk_test_abc', fetch });
+
+    await expect(sifende.catalogos.ciudadesDeDepartamento(1)).resolves.toEqual([
+      { ciudadId: 1, nombre: 'ASUNCION (DISTRITO)' },
+    ]);
+    expect(llamadas[0]?.url.pathname).toBe('/api/v1/geografia/departamentos/1/ciudades');
+    expect(llamadas[0]?.headers.has('authorization')).toBe(false);
+  });
+});
+
+describe('webhooks', () => {
+  const cortar = () => {
+    throw new TypeError('fetch failed');
+  };
+
+  it('crea un webhook sin Idempotency-Key y devuelve el secreto', async () => {
+    const { fetch, llamadas } = falsoFetch(json({ endpoint: { id: 7 }, secreto: 'whsec_nuevo' }, 201));
+    const sifende = new Sifende({ apiKey: 'sk_test_abc', fetch });
+
+    const creado = await sifende.webhooks.crear({
+      url: 'https://tienda.com.py/webhooks/sifende',
+      eventos: ['documento.aprobado', 'documento.rechazado'],
+    });
+
+    expect(creado.secreto).toBe('whsec_nuevo');
+    expect(llamadas[0]?.init.method).toBe('POST');
+    expect(llamadas[0]?.url.pathname).toBe('/api/v1/contribuyente/webhooks');
+    expect(llamadas[0]?.headers.has('idempotency-key')).toBe(false);
+  });
+
+  it('no repite la creación ni la rotación tras un corte de conexión', async () => {
+    const { fetch, llamadas } = falsoFetch(cortar, json({ secreto: 'whsec_duplicado' }, 201));
+    const sifende = new Sifende({ apiKey: 'sk_test_abc', fetch });
+
+    await expect(sifende.webhooks.crear({ url: 'https://tienda.com.py/w', eventos: [] })).rejects.toBeInstanceOf(
+      SifendeConexionError,
+    );
+    expect(llamadas).toHaveLength(1);
+
+    const rotacion = falsoFetch(cortar, json({ secreto: 'whsec_otro' }));
+    const otro = new Sifende({ apiKey: 'sk_test_abc', fetch: rotacion.fetch });
+    await expect(otro.webhooks.rotarSecreto(7)).rejects.toBeInstanceOf(SifendeConexionError);
+    expect(rotacion.llamadas).toHaveLength(1);
+    expect(rotacion.llamadas[0]?.url.pathname).toBe('/api/v1/contribuyente/webhooks/7/rotar');
+  });
+
+  it('lista, consulta, actualiza y elimina', async () => {
+    const { fetch, llamadas } = falsoFetch(
+      json([{ id: 7, ambiente: 'DEV' }]),
+      json({ id: 7 }),
+      json({ id: 7, activo: false }),
+      () => new Response(null, { status: 204 }),
+    );
+    const sifende = new Sifende({ apiKey: 'sk_test_abc', fetch });
+
+    await expect(sifende.webhooks.listar()).resolves.toEqual([{ id: 7, ambiente: 'DEV' }]);
+    await sifende.webhooks.consultar(7);
+    await sifende.webhooks.actualizar(7, {
+      url: 'https://tienda.com.py/w',
+      eventos: ['lote.procesado'],
+      activo: false,
+    });
+    await expect(sifende.webhooks.eliminar(7)).resolves.toBeUndefined();
+
+    expect(llamadas.map((l) => `${l.init.method} ${l.url.pathname}`)).toEqual([
+      'GET /api/v1/contribuyente/webhooks',
+      'GET /api/v1/contribuyente/webhooks/7',
+      'PUT /api/v1/contribuyente/webhooks/7',
+      'DELETE /api/v1/contribuyente/webhooks/7',
+    ]);
+    expect(JSON.parse(String(llamadas[2]?.init.body))).toMatchObject({ activo: false });
+  });
+
+  it('informa el 404 de un webhook de otro ambiente', async () => {
+    const { fetch } = falsoFetch(problema(404, 'webhook-not-found'));
+    const sifende = new Sifende({ apiKey: 'sk_test_abc', fetch });
+
+    const error = await sifende.webhooks.consultar(8).catch((e: unknown) => e);
+
+    expect((error as SifendeApiError).status).toBe(404);
+    expect((error as SifendeApiError).codigo).toBe('webhook-not-found');
+  });
+
+  it('pasa los filtros de entregas como query', async () => {
+    const { fetch, llamadas } = falsoFetch(json({ content: [{ id: 'e1', estado: 'FALLIDA' }], page: 2 }));
+    const sifende = new Sifende({ apiKey: 'sk_test_abc', fetch });
+
+    const pagina = await sifende.webhooks.listarEntregas(7, {
+      page: 2,
+      size: 50,
+      estado: 'FALLIDA',
+      tipoEvento: 'documento.aprobado',
+    });
+
+    expect(pagina.content?.[0]?.estado).toBe('FALLIDA');
+    expect(llamadas[0]?.url.pathname).toBe('/api/v1/contribuyente/webhooks/7/entregas');
+    expect(llamadas[0]?.url.search).toBe('?page=2&size=50&estado=FALLIDA&tipoEvento=documento.aprobado');
+  });
+});

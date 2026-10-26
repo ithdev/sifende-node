@@ -4,6 +4,32 @@ export type ClientOptions = {
     baseUrl: 'https://api.sifende.com.py' | (string & {});
 };
 
+export type ActualizarWebhookIntegracionRequest = {
+    /**
+     * URL HTTPS pública que recibe los eventos. No se siguen redirects.
+     */
+    url: string;
+    /**
+     * Eventos a los que se suscribe el webhook.
+     */
+    eventos: Array<'documento.aprobado' | 'documento.rechazado' | 'documento.cancelado' | 'lote.procesado'>;
+    /**
+     * `false` pausa el webhook y cancela sus entregas pendientes.
+     */
+    activo: boolean;
+};
+
+export type WebhookEndpointDto = {
+    id: number;
+    url: string;
+    ambiente: 'DEV' | 'PROD' | 'SANDBOX';
+    eventos: Array<string>;
+    activo: boolean;
+    fechaCreacion: string;
+    fechaEdicion: string;
+    fechaRotacionSecreto: string;
+};
+
 /**
  * Documento referenciado por la factura (H001): una nota de remisión o una factura de anticipo,
  * electrónica (`cdc`) o impresa (timbrado, establecimiento, punto, número, tipo y fecha).
@@ -67,9 +93,9 @@ export type AutofacturaElectronicaRequest = Omit<DocumentoElectronicoRequest, 't
     items: Array<ItemAutofacturaDto>;
     emailEntrega?: string;
 } & {
-    condicionOperacion?: 'CONTADO';
-    tipoCambio?: null;
     descuentoGlobalPorcentaje?: null;
+    tipoCambio?: null;
+    condicionOperacion?: 'CONTADO';
     monedaOperacion?: 'PYG';
 } & unknown & {
     condicionPago: {
@@ -360,8 +386,9 @@ export type DocumentoAsociadoRemisionDto = {
  * en el schema correspondiente (`FacturaElectronicaRequest`,
  * `NotaCreditoElectronicaRequest`, …).
  *
- * El emisor no se envía: sale de la API key. El timbrado y el correlativo tampoco,
- * los asigna Sifende.
+ * El emisor no se envía: sale de la API key. El timbrado lo toma Sifende del ambiente
+ * y el correlativo también, salvo que el sistema del integrador numere por su cuenta
+ * con `numeroDocumento`.
  *
  */
 export type DocumentoElectronicoRequest = {
@@ -385,6 +412,18 @@ export type DocumentoElectronicoRequest = {
      * Punto de expedición dentro del establecimiento (1-999)
      */
     puntoExpedicion: number;
+    /**
+     * Número de documento (dNumDoc) asignado por tu sistema, de 1 a 9.999.999. Si se omite, Sifende asigna el siguiente correlativo del punto de expedición
+     */
+    numeroDocumento?: number;
+    /**
+     * Código de seguridad (dCodSeg) de 9 dígitos. Con el mismo número y la misma fecha de emisión produce siempre el mismo CDC. Si se omite, Sifende genera uno al azar
+     */
+    codigoSeguridad?: string;
+    /**
+     * Timbrado con el que tu sistema numera. Si se informa y no coincide con el timbrado cargado en Sifende para el ambiente, el documento se rechaza con `timbrado-mismatch`
+     */
+    numeroTimbrado?: number;
     /**
      * Naturaleza de la operación. Obligatorio para factura y autofactura; no se informa en notas de crédito, débito ni remisión
      */
@@ -725,10 +764,10 @@ export type ItemDto = {
 };
 
 export type ItemDocumento = {
-    descripcion?: string;
-    codigo?: string;
-    cantidad?: number;
     unidadMedida?: 'kWh' | 'AA' | 'BG' | '_4A' | 'AB' | 'BX' | 'CM' | 'CM2' | 'CM3' | 'BK' | 'CPM' | 'Ci' | 'DET' | 'Di' | 'DOC' | 'DPC' | 'BL' | 'GLL' | 'g' | 'GRO' | 'ha' | 'Hs' | 'SET' | 'E4' | 'kg' | 'kg_m2' | 'Km' | 'KT' | 'LT' | 'U_JGO' | 'ME' | 'ml' | 'm' | 'MT' | 'M2' | 'M3' | 'M5' | 'MCU' | 'MG' | 'ML' | 'MIL' | 'MM' | 'MM2' | 'Mi' | 'PK' | 'PAR' | 'BW' | 'FOT' | 'FTK' | 'PCE' | 'pm' | 'JR' | 'PUL' | 'KLT' | 'racion' | 'RM' | 'RO' | 'Se' | 'DR' | 'TN' | 'UNI' | 'UI' | 'GL' | 'Ya';
+    descripcion?: string;
+    cantidad?: number;
+    codigo?: string;
 };
 
 export type ItemRemisionDto = {
@@ -976,7 +1015,7 @@ export type ReceptorDto = unknown & {
      */
     nombreFantasia?: string;
     /**
-     * Domicilio del receptor (D213). Obligatorio para `tipoOperacion = B2F` y para la nota de remisión, que documenta un traslado físico; opcional en el resto
+     * Domicilio del receptor (D213). Obligatorio para `tipoOperacion = B2F` y para la nota de remisión, que documenta un traslado físico; opcional en el resto. En una FE nacional exige `departamento` y `ciudad`
      */
     direccion?: string;
     /**
@@ -1380,6 +1419,25 @@ export type EventoInutilizacionRequest = {
     serie?: string;
 };
 
+export type CrearWebhookIntegracionRequest = {
+    /**
+     * URL HTTPS pública que recibe los eventos. No se siguen redirects.
+     */
+    url: string;
+    /**
+     * Eventos a los que se suscribe el webhook.
+     */
+    eventos: Array<'documento.aprobado' | 'documento.rechazado' | 'documento.cancelado' | 'lote.procesado'>;
+};
+
+export type WebhookSecretResponse = {
+    endpoint: WebhookEndpointDto;
+    /**
+     * Secreto de firma. Sólo se devuelve al crear el webhook y al rotar el secreto.
+     */
+    secreto: string;
+};
+
 export type EnumValueDto = {
     name?: string;
     label?: string;
@@ -1599,6 +1657,34 @@ export type Ubicacion = {
     descripcion: string;
 };
 
+export type WebhookDeliveryDto = {
+    id: string;
+    eventId: string;
+    tipoEvento: string;
+    endpointId: number;
+    endpointUrl: string;
+    estado: 'PENDIENTE' | 'ENCOLADA' | 'ENVIANDO' | 'REINTENTANDO' | 'ENTREGADA' | 'FALLIDA' | 'CANCELADA';
+    cantidadIntentos: number;
+    ultimoHttpStatus: number | null;
+    ultimoErrorCodigo: string | null;
+    ultimoErrorMensaje: string | null;
+    fechaCreacion: string;
+    fechaUltimoIntento: string | null;
+    fechaEntrega: string | null;
+    fechaFallo: string | null;
+};
+
+export type WebhookEntregaPaginaDto = {
+    content: Array<WebhookDeliveryDto>;
+    /**
+     * Página actual, base 0
+     */
+    page: number;
+    size: number;
+    totalElements: number;
+    totalPages: number;
+};
+
 /**
  * Error en formato RFC 9457. Se sirve como `application/problem+json`.
  */
@@ -1646,6 +1732,130 @@ export type ProblemDetail = {
      */
     valoresAceptados?: Array<unknown>;
 };
+
+export type EliminarWebhookData = {
+    body?: never;
+    path: {
+        /**
+         * Identificador del webhook, tal como lo devuelve el listado
+         */
+        webhookId: number;
+    };
+    query?: never;
+    url: '/api/v1/contribuyente/webhooks/{webhookId}';
+};
+
+export type EliminarWebhookErrors = {
+    /**
+     * Falta la API key, está revocada o no corresponde al ambiente. El filtro conserva su error JSON.
+     */
+    401: {
+        error: 'Invalid or expired API key';
+    };
+    /**
+     * El recurso no existe, o le falta al contribuyente una precondición de emisión
+     */
+    404: ProblemDetail;
+    /**
+     * Error inesperado. En métodos que modifican estado el resultado queda indeterminado: consultá el estado antes de reintentar, porque un reintento a ciegas puede duplicar el documento
+     */
+    500: ProblemDetail;
+};
+
+export type EliminarWebhookError = EliminarWebhookErrors[keyof EliminarWebhookErrors];
+
+export type EliminarWebhookResponses = {
+    /**
+     * Webhook eliminado
+     */
+    204: void;
+};
+
+export type EliminarWebhookResponse = EliminarWebhookResponses[keyof EliminarWebhookResponses];
+
+export type ConsultarWebhookData = {
+    body?: never;
+    path: {
+        /**
+         * Identificador del webhook, tal como lo devuelve el listado
+         */
+        webhookId: number;
+    };
+    query?: never;
+    url: '/api/v1/contribuyente/webhooks/{webhookId}';
+};
+
+export type ConsultarWebhookErrors = {
+    /**
+     * Falta la API key, está revocada o no corresponde al ambiente. El filtro conserva su error JSON.
+     */
+    401: {
+        error: 'Invalid or expired API key';
+    };
+    /**
+     * El recurso no existe, o le falta al contribuyente una precondición de emisión
+     */
+    404: ProblemDetail;
+    /**
+     * Error inesperado. En métodos que modifican estado el resultado queda indeterminado: consultá el estado antes de reintentar, porque un reintento a ciegas puede duplicar el documento
+     */
+    500: ProblemDetail;
+};
+
+export type ConsultarWebhookError = ConsultarWebhookErrors[keyof ConsultarWebhookErrors];
+
+export type ConsultarWebhookResponses = {
+    /**
+     * Webhook
+     */
+    200: WebhookEndpointDto;
+};
+
+export type ConsultarWebhookResponse = ConsultarWebhookResponses[keyof ConsultarWebhookResponses];
+
+export type ActualizarWebhookData = {
+    body: ActualizarWebhookIntegracionRequest;
+    path: {
+        /**
+         * Identificador del webhook, tal como lo devuelve el listado
+         */
+        webhookId: number;
+    };
+    query?: never;
+    url: '/api/v1/contribuyente/webhooks/{webhookId}';
+};
+
+export type ActualizarWebhookErrors = {
+    /**
+     * El request no pasó la validación. `errores` trae un mensaje por campo
+     */
+    400: ProblemDetail;
+    /**
+     * Falta la API key, está revocada o no corresponde al ambiente. El filtro conserva su error JSON.
+     */
+    401: {
+        error: 'Invalid or expired API key';
+    };
+    /**
+     * El recurso no existe, o le falta al contribuyente una precondición de emisión
+     */
+    404: ProblemDetail;
+    /**
+     * Error inesperado. En métodos que modifican estado el resultado queda indeterminado: consultá el estado antes de reintentar, porque un reintento a ciegas puede duplicar el documento
+     */
+    500: ProblemDetail;
+};
+
+export type ActualizarWebhookError = ActualizarWebhookErrors[keyof ActualizarWebhookErrors];
+
+export type ActualizarWebhookResponses = {
+    /**
+     * Webhook actualizado
+     */
+    200: WebhookEndpointDto;
+};
+
+export type ActualizarWebhookResponse = ActualizarWebhookResponses[keyof ActualizarWebhookResponses];
 
 export type EmitirDocumentoData = {
     body: FacturaElectronicaRequest | NotaCreditoElectronicaRequest | NotaDebitoElectronicaRequest | NotaRemisionElectronicaRequest | AutofacturaElectronicaRequest;
@@ -1736,11 +1946,11 @@ export type EmitirDocumentoErrors = {
      */
     404: ProblemDetail;
     /**
-     * La operación sigue en curso, su resultado es indeterminado o el replay expiró
+     * El número de documento no está disponible, o la operación sigue en curso, su resultado es indeterminado o el replay expiró
      */
     409: ProblemDetail;
     /**
-     * El documento incumple una regla de SIFEN o la clave corresponde a otro tipo de operación
+     * El documento incumple una regla de SIFEN, el timbrado o el número no se pueden usar, o la clave corresponde a otro tipo de operación
      */
     422: ProblemDetail;
     /**
@@ -1764,7 +1974,7 @@ export type EmitirDocumentoResponses = {
 
 export type EmitirDocumentoResponse = EmitirDocumentoResponses[keyof EmitirDocumentoResponses];
 
-export type NominarByCdcData = {
+export type NominarDocumentoData = {
     body: EventoNominacionRequest;
     headers?: {
         'Idempotency-Key'?: string;
@@ -1776,14 +1986,14 @@ export type NominarByCdcData = {
     url: '/api/v1/documento-electronico/{cdc}/nominar';
 };
 
-export type NominarByCdcResponses = {
+export type NominarDocumentoResponses = {
     /**
      * OK
      */
     200: EventoSifenDto;
 };
 
-export type NominarByCdcResponse = NominarByCdcResponses[keyof NominarByCdcResponses];
+export type NominarDocumentoResponse = NominarDocumentoResponses[keyof NominarDocumentoResponses];
 
 export type CancelarDocumentoData = {
     body: CancelacionRequest;
@@ -1929,6 +2139,112 @@ export type InutilizarNumeracionResponses = {
 
 export type InutilizarNumeracionResponse = InutilizarNumeracionResponses[keyof InutilizarNumeracionResponses];
 
+export type ListarWebhooksData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/contribuyente/webhooks';
+};
+
+export type ListarWebhooksErrors = {
+    /**
+     * Falta la API key, está revocada o no corresponde al ambiente. El filtro conserva su error JSON.
+     */
+    401: {
+        error: 'Invalid or expired API key';
+    };
+    /**
+     * Error inesperado. En métodos que modifican estado el resultado queda indeterminado: consultá el estado antes de reintentar, porque un reintento a ciegas puede duplicar el documento
+     */
+    500: ProblemDetail;
+};
+
+export type ListarWebhooksError = ListarWebhooksErrors[keyof ListarWebhooksErrors];
+
+export type ListarWebhooksResponses = {
+    /**
+     * Webhooks del ambiente de la clave
+     */
+    200: Array<WebhookEndpointDto>;
+};
+
+export type ListarWebhooksResponse = ListarWebhooksResponses[keyof ListarWebhooksResponses];
+
+export type CrearWebhookData = {
+    body: CrearWebhookIntegracionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/contribuyente/webhooks';
+};
+
+export type CrearWebhookErrors = {
+    /**
+     * El request no pasó la validación. `errores` trae un mensaje por campo
+     */
+    400: ProblemDetail;
+    /**
+     * Falta la API key, está revocada o no corresponde al ambiente. El filtro conserva su error JSON.
+     */
+    401: {
+        error: 'Invalid or expired API key';
+    };
+    /**
+     * Error inesperado. En métodos que modifican estado el resultado queda indeterminado: consultá el estado antes de reintentar, porque un reintento a ciegas puede duplicar el documento
+     */
+    500: ProblemDetail;
+};
+
+export type CrearWebhookError = CrearWebhookErrors[keyof CrearWebhookErrors];
+
+export type CrearWebhookResponses = {
+    /**
+     * Webhook creado. `Location` apunta a su consulta
+     */
+    201: WebhookSecretResponse;
+};
+
+export type CrearWebhookResponse = CrearWebhookResponses[keyof CrearWebhookResponses];
+
+export type RotarSecretoWebhookData = {
+    body?: never;
+    path: {
+        /**
+         * Identificador del webhook, tal como lo devuelve el listado
+         */
+        webhookId: number;
+    };
+    query?: never;
+    url: '/api/v1/contribuyente/webhooks/{webhookId}/rotar';
+};
+
+export type RotarSecretoWebhookErrors = {
+    /**
+     * Falta la API key, está revocada o no corresponde al ambiente. El filtro conserva su error JSON.
+     */
+    401: {
+        error: 'Invalid or expired API key';
+    };
+    /**
+     * El recurso no existe, o le falta al contribuyente una precondición de emisión
+     */
+    404: ProblemDetail;
+    /**
+     * Error inesperado. En métodos que modifican estado el resultado queda indeterminado: consultá el estado antes de reintentar, porque un reintento a ciegas puede duplicar el documento
+     */
+    500: ProblemDetail;
+};
+
+export type RotarSecretoWebhookError = RotarSecretoWebhookErrors[keyof RotarSecretoWebhookErrors];
+
+export type RotarSecretoWebhookResponses = {
+    /**
+     * Secreto rotado
+     */
+    200: WebhookSecretResponse;
+};
+
+export type RotarSecretoWebhookResponse = RotarSecretoWebhookResponses[keyof RotarSecretoWebhookResponses];
+
 export type ListarEnumeracionesData = {
     body?: never;
     path?: never;
@@ -2069,6 +2385,59 @@ export type ListarCiudadesDepartamentoResponses = {
 
 export type ListarCiudadesDepartamentoResponse = ListarCiudadesDepartamentoResponses[keyof ListarCiudadesDepartamentoResponses];
 
+export type DescargarXmlData = {
+    body?: never;
+    path: {
+        /**
+         * CDC del documento, 44 dígitos
+         */
+        cdc: string;
+    };
+    query?: never;
+    url: '/api/v1/documento-electronico/{cdc}/xml';
+};
+
+export type DescargarXmlErrors = {
+    /**
+     * Falta la API key, está revocada o no corresponde al ambiente. El filtro conserva su error JSON.
+     */
+    401: {
+        error: 'Invalid or expired API key';
+    };
+    /**
+     * El documento está conservado, pero fuera del período de acceso del plan actual
+     */
+    403: {
+        type: 'https://api.sifende.com.py/problems/document-archived';
+        title: 'Documento archivado';
+        status: 403;
+        detail: 'El período de acceso incluido en el plan actual ha finalizado.';
+    };
+    /**
+     * El recurso no existe, o le falta al contribuyente una precondición de emisión
+     */
+    404: ProblemDetail;
+    /**
+     * El documento existe pero todavía no tiene XML firmado
+     */
+    409: ProblemDetail;
+    /**
+     * Error inesperado. En métodos que modifican estado el resultado queda indeterminado: consultá el estado antes de reintentar, porque un reintento a ciegas puede duplicar el documento
+     */
+    500: ProblemDetail;
+};
+
+export type DescargarXmlError = DescargarXmlErrors[keyof DescargarXmlErrors];
+
+export type DescargarXmlResponses = {
+    /**
+     * XML firmado del documento
+     */
+    200: Blob | File;
+};
+
+export type DescargarXmlResponse = DescargarXmlResponses[keyof DescargarXmlResponses];
+
 export type DescargarKudeData = {
     body?: never;
     path: {
@@ -2131,12 +2500,144 @@ export type DescargarKudeResponses = {
      * Preparación pendiente; esta respuesta no es un PDF. Seguir Location, que sólo consulta. Si sigue pendiente después de 2 minutos, repetir una vez la descarga sin soloConsulta.
      */
     202: {
-        estado: 'PENDIENTE';
         url: null;
+        estado: 'PENDIENTE';
     };
 };
 
 export type DescargarKudeResponse = DescargarKudeResponses[keyof DescargarKudeResponses];
+
+export type DescargarKudeTicketData = {
+    body?: never;
+    path: {
+        /**
+         * CDC del documento, 44 dígitos
+         */
+        cdc: string;
+    };
+    query?: {
+        /**
+         * Ancho del papel en mm: 80 o 58
+         */
+        ancho?: number;
+        /**
+         * Ticket resumen, sin detalle de ítems ni de impuestos
+         */
+        resumen?: boolean;
+    };
+    url: '/api/v1/documento-electronico/{cdc}/kude/ticket';
+};
+
+export type DescargarKudeTicketErrors = {
+    /**
+     * El request no pasó la validación. `errores` trae un mensaje por campo
+     */
+    400: ProblemDetail;
+    /**
+     * Falta la API key, está revocada o no corresponde al ambiente. El filtro conserva su error JSON.
+     */
+    401: {
+        error: 'Invalid or expired API key';
+    };
+    /**
+     * El documento está conservado, pero fuera del período de acceso del plan actual
+     */
+    403: {
+        type: 'https://api.sifende.com.py/problems/document-archived';
+        title: 'Documento archivado';
+        status: 403;
+        detail: 'El período de acceso incluido en el plan actual ha finalizado.';
+    };
+    /**
+     * El recurso no existe, o le falta al contribuyente una precondición de emisión
+     */
+    404: ProblemDetail;
+    /**
+     * No se pudo obtener el KuDE por un error interno. La extensión estado=FALLIDO sólo aparece cuando existe cierre terminal; no depende del HTTP.
+     */
+    500: ProblemDetail;
+    /**
+     * KuDE no implementado para este tipo de documento.
+     */
+    501: ProblemDetail;
+};
+
+export type DescargarKudeTicketError = DescargarKudeTicketErrors[keyof DescargarKudeTicketErrors];
+
+export type DescargarKudeTicketResponses = {
+    /**
+     * PDF de una sola página del ancho del papel
+     */
+    200: Blob | File;
+};
+
+export type DescargarKudeTicketResponse = DescargarKudeTicketResponses[keyof DescargarKudeTicketResponses];
+
+export type DescargarKudeTicketImagenData = {
+    body?: never;
+    path: {
+        /**
+         * CDC del documento, 44 dígitos
+         */
+        cdc: string;
+    };
+    query?: {
+        /**
+         * Puntos por línea de la impresora: 576, 512 o 384
+         */
+        puntos?: number;
+        /**
+         * Ticket resumen, sin detalle de ítems ni de impuestos
+         */
+        resumen?: boolean;
+    };
+    url: '/api/v1/documento-electronico/{cdc}/kude/ticket/imagen';
+};
+
+export type DescargarKudeTicketImagenErrors = {
+    /**
+     * El request no pasó la validación. `errores` trae un mensaje por campo
+     */
+    400: ProblemDetail;
+    /**
+     * Falta la API key, está revocada o no corresponde al ambiente. El filtro conserva su error JSON.
+     */
+    401: {
+        error: 'Invalid or expired API key';
+    };
+    /**
+     * El documento está conservado, pero fuera del período de acceso del plan actual
+     */
+    403: {
+        type: 'https://api.sifende.com.py/problems/document-archived';
+        title: 'Documento archivado';
+        status: 403;
+        detail: 'El período de acceso incluido en el plan actual ha finalizado.';
+    };
+    /**
+     * El recurso no existe, o le falta al contribuyente una precondición de emisión
+     */
+    404: ProblemDetail;
+    /**
+     * No se pudo obtener el KuDE por un error interno. La extensión estado=FALLIDO sólo aparece cuando existe cierre terminal; no depende del HTTP.
+     */
+    500: ProblemDetail;
+    /**
+     * KuDE no implementado para este tipo de documento.
+     */
+    501: ProblemDetail;
+};
+
+export type DescargarKudeTicketImagenError = DescargarKudeTicketImagenErrors[keyof DescargarKudeTicketImagenErrors];
+
+export type DescargarKudeTicketImagenResponses = {
+    /**
+     * PNG de 1 bit
+     */
+    200: Blob | File;
+};
+
+export type DescargarKudeTicketImagenResponse = DescargarKudeTicketImagenResponses[keyof DescargarKudeTicketImagenResponses];
 
 export type ConsultarEstadoData = {
     body?: never;
@@ -2329,6 +2830,67 @@ export type ConsultarContribuyenteResponses = {
 };
 
 export type ConsultarContribuyenteResponse = ConsultarContribuyenteResponses[keyof ConsultarContribuyenteResponses];
+
+export type ListarEntregasWebhookData = {
+    body?: never;
+    path: {
+        /**
+         * Identificador del webhook, tal como lo devuelve el listado
+         */
+        webhookId: number;
+    };
+    query?: {
+        /**
+         * Página, base 0
+         */
+        page?: number;
+        /**
+         * Tamaño de página, de 1 a 100
+         */
+        size?: number;
+        /**
+         * Filtro por estado de la entrega
+         */
+        estado?: 'PENDIENTE' | 'ENCOLADA' | 'ENVIANDO' | 'REINTENTANDO' | 'ENTREGADA' | 'FALLIDA' | 'CANCELADA';
+        /**
+         * Filtro por tipo de evento
+         */
+        tipoEvento?: 'documento.aprobado' | 'documento.rechazado' | 'documento.cancelado' | 'lote.procesado';
+    };
+    url: '/api/v1/contribuyente/webhooks/{webhookId}/entregas';
+};
+
+export type ListarEntregasWebhookErrors = {
+    /**
+     * El request no pasó la validación. `errores` trae un mensaje por campo
+     */
+    400: ProblemDetail;
+    /**
+     * Falta la API key, está revocada o no corresponde al ambiente. El filtro conserva su error JSON.
+     */
+    401: {
+        error: 'Invalid or expired API key';
+    };
+    /**
+     * El recurso no existe, o le falta al contribuyente una precondición de emisión
+     */
+    404: ProblemDetail;
+    /**
+     * Error inesperado. En métodos que modifican estado el resultado queda indeterminado: consultá el estado antes de reintentar, porque un reintento a ciegas puede duplicar el documento
+     */
+    500: ProblemDetail;
+};
+
+export type ListarEntregasWebhookError = ListarEntregasWebhookErrors[keyof ListarEntregasWebhookErrors];
+
+export type ListarEntregasWebhookResponses = {
+    /**
+     * Página de entregas
+     */
+    200: WebhookEntregaPaginaDto;
+};
+
+export type ListarEntregasWebhookResponse = ListarEntregasWebhookResponses[keyof ListarEntregasWebhookResponses];
 
 export type ConsultarPlanConsumoData = {
     body?: never;

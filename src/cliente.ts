@@ -3,12 +3,14 @@ import { Catalogos } from './recursos/catalogos.js';
 import { Contribuyente } from './recursos/contribuyente.js';
 import { Documentos } from './recursos/documentos.js';
 import { Padron } from './recursos/padron.js';
+import { Webhooks } from './recursos/webhooks.js';
 
 export class Sifende {
   readonly documentos: Documentos;
   readonly contribuyente: Contribuyente;
   readonly padron: Padron;
   readonly catalogos: Catalogos;
+  readonly webhooks: Webhooks;
   /** Ambiente que fija la API key (`sk_live_` → PROD, `sk_test_` → DEV, `sk_sandbox_` → SANDBOX). */
   readonly ambiente: Ambiente | undefined;
 
@@ -19,5 +21,6 @@ export class Sifende {
     this.contribuyente = new Contribuyente(http);
     this.padron = new Padron(http);
     this.catalogos = new Catalogos(http);
+    this.webhooks = new Webhooks(http);
   }
 }
