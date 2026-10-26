@@ -24,12 +24,14 @@ export interface OpcionesIdempotentes extends OpcionesSolicitud {
 }
 
 export interface Solicitud {
-  metodo: 'GET' | 'POST';
+  metodo: 'GET' | 'POST' | 'PUT' | 'DELETE';
   ruta: string;
   query?: Record<string, string | number | boolean | undefined> | undefined;
   cuerpo?: unknown;
   idempotencyKey?: string | undefined;
   autenticar?: boolean | undefined;
+  /** Accept de una descarga (PDF, XML, PNG). Sin `binario`, el éxito se lee como texto. */
+  acepta?: string | undefined;
   binario?: boolean | undefined;
   signal?: AbortSignal | undefined;
 }
@@ -41,6 +43,11 @@ export interface Respuesta<T> {
 }
 
 export const URL_BASE = 'https://api.sifende.com.py';
+
+// Accept de cada descarga. Incluyen JSON porque los errores, y el 202 del KuDE, vienen en JSON.
+export const ACEPTA_PDF = 'application/pdf, application/json, application/problem+json';
+export const ACEPTA_XML = 'application/xml, application/json, application/problem+json';
+export const ACEPTA_PNG = 'image/png, application/json, application/problem+json';
 
 const PREFIJOS: Record<string, Ambiente> = {
   sk_live_: 'PROD',
@@ -129,7 +136,7 @@ export class ClienteHttp {
 
   private preparar(solicitud: Solicitud): RequestInit {
     const headers = new Headers({
-      Accept: solicitud.binario ? 'application/pdf, application/json, application/problem+json' : 'application/json',
+      Accept: solicitud.acepta ?? 'application/json',
       'User-Agent': `sifende-sdk-ts/${VERSION}`,
     });
     if (solicitud.autenticar !== false) headers.set('Authorization', `Bearer ${this.apiKey}`);
