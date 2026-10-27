@@ -1,5 +1,9 @@
 # @sifende/sdk
 
+[![npm](https://img.shields.io/npm/v/@sifende/sdk)](https://www.npmjs.com/package/@sifende/sdk)
+[![CI](https://github.com/ithdev/sifende-node/actions/workflows/ci.yml/badge.svg)](https://github.com/ithdev/sifende-node/actions/workflows/ci.yml)
+[![Licencia: Apache 2.0](https://img.shields.io/badge/licencia-Apache%202.0-blue)](LICENSE)
+
 SDK de Sifende para TypeScript y JavaScript: emití facturas electrónicas, notas de crédito y eventos de SIFEN, verificá
 webhooks y calculá totales con las mismas reglas que la API.
 
@@ -188,6 +192,12 @@ copia local del spec:
 npm run generar:tipos
 SIFENDE_OPENAPI=./openapi.json npm run generar:tipos
 ```
+
+## Soporte
+
+- Errores del SDK: abrí un [issue](https://github.com/ithdev/sifende-node/issues).
+- Vulnerabilidades: reportalas en privado, como explica [SECURITY.md](SECURITY.md).
+- Tu cuenta, tus documentos o la API: escribinos a [soporte@sifende.com.py](mailto:soporte@sifende.com.py).
 
 ## Licencia
 
